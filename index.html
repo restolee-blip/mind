@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>감정 스티커 앱 (보안형)</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {font-family:sans-serif;text-align:center;background:#f5f5f5;}
+.grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;padding:15px;}
+.sticker {background:#fff;border-radius:20px;padding:5px;box-shadow:0 2px 6px rgba(0,0,0,0.1);}
+button {margin:5px;padding:10px 15px;border:none;border-radius:20px;background:#ffd1dc;}
+input {padding:10px;border-radius:10px;border:1px solid #ccc;}
+canvas {margin-top:10px;}
+</style>
+</head>
+
+<body>
+
+<!-- 🔐 로그인 화면 -->
+<div id="loginPage">
+  <h2>🔐 로그인</h2>
+  <input type="password" id="password" placeholder="비밀번호 입력">
+  <br><br>
+  <button onclick="login()">로그인</button>
+  <p id="loginMsg" style="color:red;"></p>
+</div>
+
+<!-- 🎨 앱 화면 -->
+<div id="appPage" style="display:none;">
+<h2>😊 감정 스티커 앱</h2>
+
+<input type="text" id="name" placeholder="이름 입력">
+<br><br>
+<input type="file" accept="image/*" onchange="uploadImage(event)">
+
+<br>
+<button onclick="generateStickers()">✨ 스티커 생성</button>
+<button onclick="renderChart()">📊 그래프</button>
+<button onclick="generateReport()">📄 리포트</button>
+<button onclick="logout()">🚪 로그아웃</button>
+
+<div class="grid" id="grid"></div>
+
+<canvas id="chart" width="300" height="300"></canvas>
+<div id="report"></div>
+</div>
+
+<script>
+// 🔐 비밀번호 해시 (비밀번호: 1234)
+const PASSWORD_HASH = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
+
+async function sha256(text) {
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function login() {
+  const input = document.getElementById("password").value;
+  const hash = await sha256(input);
+
+  if(hash === PASSWORD_HASH) {
+    localStorage.setItem("login", "ok");
+    showApp();
+  } else {
+    document.getElementById("loginMsg").innerText = "비밀번호가 틀렸습니다.";
+  }
+}
+
+function logout() {
+  localStorage.removeItem("login");
+  location.reload();
+}
+
+function showApp() {
+  document.getElementById("loginPage").style.display = "none";
+  document.getElementById("appPage").style.display = "block";
+}
+
+window.onload = () => {
+  if(localStorage.getItem("login") === "ok") showApp();
+};
+
+// 📷 이미지 업로드
+let uploadedImage = "";
+function uploadImage(e){
+  const reader = new FileReader();
+  reader.onload = ev => uploadedImage = ev.target.result;
+  reader.readAsDataURL(e.target.files[0]);
+}
+
+// 😊 감정 리스트
+const emotions = [
+["안녕!","😊"],["헤헷!","😊"],["힝ㅠㅠ","😢"],
+["졸려요","😴"],["우와!","😊"],["멍~","😐"],
+["냠냠","😊"],["쳇!","😡"],["크앙!","😡"],
+["좋아요!","😊"],["반짝!","😊"],["응?","😐"]
+];
+
+// 💾 데이터 저장
+let emotionData = JSON.parse(localStorage.getItem("emotions")) || [];
+
+function saveEmotion(e){
+  const name = document.getElementById("name").value || "익명";
+
+  emotionData.push({
+    name:name,
+    emotion:e,
+    date:new Date().toISOString().split("T")[0]
+  });
+
+  localStorage.setItem("emotions", JSON.stringify(emotionData));
+  alert("저장되었습니다 😊");
+}
+
+// 🎨 스티커 생성
+function generateStickers(){
+  if(!uploadedImage){alert("사진 업로드!");return;}
+
+  const grid = document.getElementById("grid");
+  grid.innerHTML="";
+
+  emotions.forEach(e=>{
+    const div=document.createElement("div");
+    div.className="sticker";
+    div.innerHTML=`<img src="${uploadedImage}" width="80"><br>${e[0]}`;
+    div.onclick=()=>saveEmotion(e[1]);
+    grid.appendChild(div);
+  });
+}
+
+// 📊 그래프
+function renderChart(){
+  const counts={"😊":0,"😢":0,"😡":0,"😴":0};
+
+  emotionData.forEach(e=>{
+    if(counts[e.emotion]!==undefined) counts[e.emotion]++;
+  });
+
+  new Chart(document.getElementById("chart"),{
+    type:"bar",
+    data:{
+      labels:["행복","슬픔","화남","피곤"],
+      datasets:[{data:Object.values(counts)}]
+    }
+  });
+}
+
+// 📄 리포트
+function generateReport(){
+  const counts={"😊":0,"😢":0,"😡":0,"😴":0};
+  emotionData.forEach(e=>counts[e.emotion]++);
+
+  const max=Object.keys(counts).reduce((a,b)=>counts[a]>counts[b]?a:b);
+
+  let comment="";
+  if(max==="😊") comment="전반적으로 안정적인 상태입니다.";
+  if(max==="😢") comment="정서적 지원이 필요합니다.";
+  if(max==="😡") comment="감정 조절 지도가 필요합니다.";
+  if(max==="😴") comment="휴식이 필요합니다.";
+
+  document.getElementById("report").innerHTML=`
+    <h3>📄 감정 리포트</h3>
+    😊 ${counts["😊"]}명<br>
+    😢 ${counts["😢"]}명<br>
+    😡 ${counts["😡"]}명<br>
+    😴 ${counts["😴"]}명<br><br>
+    👉 ${comment}
+  `;
+}
+</script>
+
+</body>
+</html>
