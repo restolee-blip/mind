@@ -3,31 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>감정 이모티콘 생성기 (최종)</title>
-
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+<title>감정 이모티콘 생성기</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
-
 <style>
-body {text-align:center;font-family:sans-serif;background:#fff7fa;}
+body {text-align:center;font-family:sans-serif;background:#fff7fa;margin:0;padding:10px;}
+h2 {margin:10px 0;}
+#status {color:#888;font-size:13px;margin:4px 0 8px;}
 button {margin:3px;padding:8px 10px;border-radius:15px;border:none;background:#ffd1dc;font-size:18px;cursor:pointer;}
-button.active {outline:3px solid #ff69b4;}
-#emoGrid {display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:360px;margin:10px auto;}
-canvas,video {border-radius:20px;margin-top:10px;}
-#actionBtns button {font-size:14px;padding:10px 14px;}
+button.active {outline:3px solid #ff69b4;background:#ffb3c6;}
+#emoGrid {display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:380px;margin:8px auto;}
+#actionBtns button {font-size:14px;padding:10px 16px;}
+canvas {border-radius:20px;display:block;margin:8px auto 0;}
+video {display:none;}
 </style>
 </head>
-
 <body>
 
 <h2>😊 감정 이모티콘 생성기</h2>
+<p id="status">카메라 연결 중...</p>
 
-<video id="video" autoplay playsinline width="240"></video>
-<canvas id="canvas" width="240" height="240"></canvas>
+<!-- video는 숨기고 canvas만 표시 -->
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas" width="320" height="320"></canvas>
 
-<br>
-
-<!-- 감정 버튼 24개 — JS로 생성 -->
 <div id="emoGrid"></div>
 
 <br>
@@ -35,32 +33,27 @@ canvas,video {border-radius:20px;margin-top:10px;}
   <button onclick="takePhoto()">📸 사진 찍기</button>
   <button onclick="exportPNGSet()">📦 PNG 24개</button>
   <button onclick="exportGIF()">🎞 GIF</button>
-  <button onclick="generateThumbnail()">🖼 썸네일</button>
 </div>
 
-<br>
-<canvas id="photoCanvas" width="240" height="240" style="display:none;border-radius:20px;margin-top:10px;"></canvas>
-<a id="photoLink" style="display:none;"></a>
-
 <script>
+const EMO = [
+  "😊","😢","😡","😴","😍","😮","😆","😐",
+  "🥰","😭","😤","😪","😎","😳","😇","😜",
+  "🤔","😬","😱","😋","🤩","😒","😔","😝"
+];
 
-const EMO = ["😊","😢","😡","😴","😍","😮","😆","😐",
-             "🥰","😭","😤","😪","😎","😳","😇","😜",
-             "🤔","😬","😱","😋","🤩","😒","😔","😝"];
-
-// 감정별 시각 효과 정의
 const EFFECTS = {
   "😊": {filter:"brightness(1.1) saturate(1.6)", sx:1.08, sy:1.06},
-  "😢": {filter:"brightness(0.75) saturate(0.4) hue-rotate(200deg)", dy:10},
+  "😢": {filter:"brightness(0.75) saturate(0.4) hue-rotate(200deg)", dy:12},
   "😡": {filter:"brightness(1.1) saturate(2.5) hue-rotate(340deg)", shake:true},
-  "😴": {filter:"brightness(0.65) saturate(0.3) blur(1px)", sx:0.93, sy:0.9},
+  "😴": {filter:"brightness(0.65) saturate(0.3) blur(1.5px)", sx:0.93, sy:0.9},
   "😍": {filter:"brightness(1.2) saturate(2.2) hue-rotate(-20deg)", sx:1.12, sy:1.12},
-  "😮": {filter:"brightness(1.05) contrast(1.3)", sx:1.0, sy:1.2},
-  "😆": {filter:"brightness(1.2) saturate(1.8)", sx:1.18, sy:1.0},
+  "😮": {filter:"brightness(1.05) contrast(1.3)", sy:1.15},
+  "😆": {filter:"brightness(1.2) saturate(1.8)", sx:1.15},
   "😐": {filter:"saturate(0.5) brightness(0.92)"},
   "🥰": {filter:"brightness(1.15) saturate(2.4) hue-rotate(-15deg)", sx:1.1, sy:1.1},
   "😭": {filter:"brightness(0.65) saturate(0.3) hue-rotate(215deg)", dy:18},
-  "😤": {filter:"brightness(1.05) saturate(2.2) contrast(1.3) hue-rotate(5deg)"},
+  "😤": {filter:"brightness(1.05) saturate(2.2) contrast(1.3)"},
   "😪": {filter:"brightness(0.7) saturate(0.4) blur(0.8px)", sy:0.88},
   "😎": {filter:"brightness(0.9) contrast(1.5) saturate(1.1)"},
   "😳": {filter:"brightness(1.25) saturate(1.9) hue-rotate(-30deg)", sx:1.12, sy:1.12},
@@ -68,7 +61,7 @@ const EFFECTS = {
   "😜": {filter:"brightness(1.1) saturate(1.6)", rotate:6},
   "🤔": {filter:"brightness(0.95) saturate(0.85)", rotate:-4},
   "😬": {filter:"brightness(1.05) contrast(1.4) saturate(0.75)", sx:1.22, sy:0.88},
-  "😱": {filter:"brightness(1.1) contrast(1.6) saturate(0.45)", sx:1.25, sy:1.35},
+  "😱": {filter:"brightness(1.1) contrast(1.6) saturate(0.45)", sx:1.2, sy:1.3},
   "😋": {filter:"brightness(1.12) saturate(1.7)", sx:1.06, sy:1.06},
   "🤩": {filter:"brightness(1.35) saturate(3.0)", sx:1.2, sy:1.2},
   "😒": {filter:"brightness(0.88) saturate(0.55)", dy:6},
@@ -77,8 +70,9 @@ const EFFECTS = {
 };
 
 let currentEmotion = "😊";
+let cameraReady = false;
 
-// 감정 버튼 동적 생성
+// ── 감정 버튼 24개 동적 생성 ──────────────────────
 const grid = document.getElementById("emoGrid");
 EMO.forEach(e => {
   const btn = document.createElement("button");
@@ -91,153 +85,108 @@ EMO.forEach(e => {
 
 function setEmotion(e) {
   currentEmotion = e;
-  document.querySelectorAll("#emoGrid button").forEach(b => {
-    b.classList.toggle("active", b.dataset.emo === e);
-  });
+  document.querySelectorAll("#emoGrid button").forEach(b =>
+    b.classList.toggle("active", b.dataset.emo === e));
 }
 
-// 🎥 카메라
+// ── 카메라 연결 ───────────────────────────────────
 const video = document.getElementById("video");
-navigator.mediaDevices.getUserMedia({video:true})
-  .then(stream => { video.srcObject = stream; })
-  .catch(() => alert("카메라 권한이 필요합니다."));
 
-// 🧠 FaceMesh
-const faceMesh = new FaceMesh({
-  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-});
-faceMesh.setOptions({maxNumFaces:1, refineLandmarks:true});
+navigator.mediaDevices.getUserMedia({video:{width:320,height:320,facingMode:"user"}, audio:false})
+  .then(stream => {
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      video.play();
+      cameraReady = true;
+      document.getElementById("status").textContent = "카메라 연결됨 ✓";
+      requestAnimationFrame(renderLoop);
+    };
+  })
+  .catch(err => {
+    document.getElementById("status").textContent = "카메라 오류: " + err.message;
+  });
 
-// 🎨 감정 효과 적용 후 그리기
-function distort(ctx, lm) {
-  const eff = EFFECTS[currentEmotion] || {};
-  const cx = 120, cy = 120;
-
-  ctx.save();
-  ctx.filter = eff.filter || "none";
-  ctx.translate(cx, cy);
-  if (eff.rotate) ctx.rotate(eff.rotate * Math.PI / 180);
-  ctx.scale(eff.sx || 1, eff.sy || 1);
-  const dx = eff.shake ? (Math.random() - 0.5) * 10 : 0;
-  const dy = eff.dy || 0;
-  ctx.translate(-cx + dx, -cy + dy);
-  ctx.drawImage(video, 0, 0, 240, 240);
-  ctx.restore();
-  ctx.filter = "none";
-}
-
-// 렌더링 루프
+// ── 캔버스 렌더링 ─────────────────────────────────
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-faceMesh.onResults(r => {
-  ctx.clearRect(0, 0, 240, 240);
-  if (r.multiFaceLandmarks && r.multiFaceLandmarks.length) {
-    distort(ctx, r.multiFaceLandmarks[0]);
-  } else {
-    ctx.drawImage(video, 0, 0, 240, 240);
-  }
-});
-
-let loopRunning = false;
-function loop() {
-  if (!loopRunning) return;
-  faceMesh.send({image: video});
-  requestAnimationFrame(loop);
-}
-
-video.addEventListener("loadeddata", () => {
-  loopRunning = true;
-  loop();
-});
-
-// 📸 사진 찍기 — video에서 직접 그려서 FaceMesh 타이밍 문제 방지
-function takePhoto() {
-  if (video.readyState < 2) { alert("카메라가 준비되지 않았습니다."); return; }
-
-  const photoCanvas = document.getElementById("photoCanvas");
-  const pCtx = photoCanvas.getContext("2d");
+// 감정 효과를 적용해 targetCtx에 그리기
+function drawWithEffect(targetCtx, w, h) {
   const eff = EFFECTS[currentEmotion] || {};
-  const cx = 120, cy = 120;
+  const cx = w / 2, cy = h / 2;
 
-  pCtx.clearRect(0, 0, 240, 240);
-  pCtx.save();
-  pCtx.filter = eff.filter || "none";
-  pCtx.translate(cx, cy);
-  if (eff.rotate) pCtx.rotate(eff.rotate * Math.PI / 180);
-  pCtx.scale(eff.sx || 1, eff.sy || 1);
-  const dx = eff.shake ? (Math.random() - 0.5) * 10 : 0;
-  pCtx.translate(-cx + dx, -(cy + (eff.dy || 0)));
-  pCtx.drawImage(video, 0, 0, 240, 240);
-  pCtx.restore();
-  pCtx.filter = "none";
-
-  photoCanvas.style.display = "block";
-  const a = document.createElement("a");
-  a.href = photoCanvas.toDataURL("image/png");
-  a.download = `photo_${currentEmotion}.png`;
-  a.click();
+  targetCtx.save();
+  targetCtx.filter = eff.filter || "none";
+  targetCtx.translate(cx, cy);
+  if (eff.rotate) targetCtx.rotate(eff.rotate * Math.PI / 180);
+  targetCtx.scale(eff.sx || 1, eff.sy || 1);
+  const dx = eff.shake ? (Math.random() - 0.5) * 8 : 0;
+  targetCtx.translate(-cx + dx, -cy + (eff.dy || 0)); // -cy + dy (부호 수정)
+  targetCtx.drawImage(video, 0, 0, w, h);
+  targetCtx.restore();
+  targetCtx.filter = "none";
 }
 
-// 🎨 배경 제거 (흰 픽셀 투명화)
-function removeBG(c) {
-  const pCtx = c.getContext("2d");
-  const img = pCtx.getImageData(0, 0, 240, 240);
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i] > 240 && d[i+1] > 240 && d[i+2] > 240) d[i+3] = 0;
+// video → canvas 직접 렌더 루프 (FaceMesh 불필요)
+function renderLoop() {
+  if (video.readyState >= 2) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawWithEffect(ctx, canvas.width, canvas.height);
   }
-  pCtx.putImageData(img, 0, 0);
+  requestAnimationFrame(renderLoop);
 }
 
-// 📦 PNG 24개 — 감정별 순차 캡처
+// ── 다운로드 헬퍼 ─────────────────────────────────
+function download(dataURL, filename) {
+  const a = document.createElement("a");
+  a.href = dataURL;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// ── 📸 사진 찍기 ──────────────────────────────────
+function takePhoto() {
+  if (!cameraReady || video.readyState < 2) {
+    alert("카메라가 준비되지 않았습니다.");
+    return;
+  }
+  // canvas는 매 프레임 갱신 중이므로 현재 상태를 바로 저장
+  download(canvas.toDataURL("image/png"), `photo_${currentEmotion}.png`);
+}
+
+// ── 📦 PNG 24개 ───────────────────────────────────
 function exportPNGSet() {
+  if (!cameraReady) { alert("카메라가 준비되지 않았습니다."); return; }
+  const saved = currentEmotion;
   EMO.forEach((e, i) => {
     setTimeout(() => {
       setEmotion(e);
       setTimeout(() => {
-        const a = document.createElement("a");
-        a.href = canvas.toDataURL("image/png");
-        a.download = `emoji_${i+1}_${e}.png`;
-        a.click();
+        download(canvas.toDataURL("image/png"),
+          `emoji_${String(i+1).padStart(2,"0")}_${e}.png`);
+        if (i === EMO.length - 1) setEmotion(saved);
       }, 150);
     }, i * 400);
   });
 }
 
-// 🎞 GIF
+// ── 🎞 GIF ────────────────────────────────────────
 function exportGIF() {
-  const gif = new GIF({workers:2, quality:5});
+  if (!cameraReady) { alert("카메라가 준비되지 않았습니다."); return; }
+  if (typeof GIF === "undefined") { alert("GIF 라이브러리를 불러오지 못했습니다."); return; }
+  const gif = new GIF({workers:2, quality:5, width:canvas.width, height:canvas.height});
   let f = 0;
   const cap = setInterval(() => {
     gif.addFrame(canvas, {copy:true, delay:80});
-    if (++f > 20) {
+    if (++f >= 20) {
       clearInterval(cap);
-      gif.on('finished', b => {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(b);
-        a.download = "emotion.gif";
-        a.click();
-      });
+      gif.on("finished", b => download(URL.createObjectURL(b), "emotion.gif"));
       gif.render();
     }
   }, 80);
 }
-
-// 🖼 썸네일
-function generateThumbnail() {
-  const tmp = document.createElement("canvas");
-  tmp.width = 240; tmp.height = 240;
-  const tCtx = tmp.getContext("2d");
-  tCtx.drawImage(video, 20, 20, 200, 200);
-  removeBG(tmp);
-  const a = document.createElement("a");
-  a.href = tmp.toDataURL("image/png");
-  a.download = "thumbnail.png";
-  a.click();
-}
-
 </script>
-
 </body>
 </html>
