@@ -3,175 +3,192 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>감정 스티커 앱 (보안형)</title>
+<title>감정 이모티콘 생성기 (최종)</title>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 
 <style>
-body {font-family:sans-serif;text-align:center;background:#f5f5f5;}
-.grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;padding:15px;}
-.sticker {background:#fff;border-radius:20px;padding:5px;box-shadow:0 2px 6px rgba(0,0,0,0.1);}
-button {margin:5px;padding:10px 15px;border:none;border-radius:20px;background:#ffd1dc;}
-input {padding:10px;border-radius:10px;border:1px solid #ccc;}
-canvas {margin-top:10px;}
+body {text-align:center;font-family:sans-serif;background:#fff7fa;}
+button {margin:5px;padding:10px;border-radius:15px;border:none;background:#ffd1dc;}
+canvas,video {border-radius:20px;margin-top:10px;}
 </style>
 </head>
 
 <body>
 
-<!-- 🔐 로그인 화면 -->
-<div id="loginPage">
-  <h2>🔐 로그인</h2>
-  <input type="password" id="password" placeholder="비밀번호 입력">
-  <br><br>
-  <button onclick="login()">로그인</button>
-  <p id="loginMsg" style="color:red;"></p>
-</div>
+<h2>😊 감정 이모티콘 생성기</h2>
 
-<!-- 🎨 앱 화면 -->
-<div id="appPage" style="display:none;">
-<h2>😊 감정 스티커 앱</h2>
-
-<input type="text" id="name" placeholder="이름 입력">
-<br><br>
-<input type="file" accept="image/*" onchange="uploadImage(event)">
+<video id="video" autoplay playsinline width="240"></video>
+<canvas id="canvas" width="240" height="240"></canvas>
 
 <br>
-<button onclick="generateStickers()">✨ 스티커 생성</button>
-<button onclick="renderChart()">📊 그래프</button>
-<button onclick="generateReport()">📄 리포트</button>
-<button onclick="logout()">🚪 로그아웃</button>
 
-<div class="grid" id="grid"></div>
+<button onclick="setEmotion('😊')">😊</button>
+<button onclick="setEmotion('😢')">😢</button>
+<button onclick="setEmotion('😡')">😡</button>
+<button onclick="setEmotion('😴')">😴</button>
 
-<canvas id="chart" width="300" height="300"></canvas>
-<div id="report"></div>
-</div>
+<br><br>
+
+<button onclick="exportPNGSet()">📦 PNG 24개</button>
+<button onclick="exportGIF()">🎞 GIF</button>
+<button onclick="generateThumbnail()">🖼 썸네일</button>
 
 <script>
-// 🔐 비밀번호 해시 (비밀번호: 1234)
-const PASSWORD_HASH = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
 
-async function sha256(text) {
-  const enc = new TextEncoder().encode(text);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf))
-    .map(b => b.toString(16).padStart(2, '0')).join('');
+// 🎯 감정
+let currentEmotion = "😊";
+
+// 🎥 카메라
+const video = document.getElementById("video");
+navigator.mediaDevices.getUserMedia({video:true})
+.then(stream=>video.srcObject=stream);
+
+// 🧠 FaceMesh
+const faceMesh = new FaceMesh({
+ locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+});
+faceMesh.setOptions({maxNumFaces:1,refineLandmarks:true});
+
+// 🎨 얼굴 변형
+function distort(ctx, video, lm){
+
+ const m = lm[13];
+ const x = m.x * 240;
+ const y = m.y * 240;
+
+ ctx.save();
+
+ if(currentEmotion==="😊"){
+  ctx.translate(x,y);
+  ctx.scale(1.3,1.1);
+  ctx.translate(-x,-y);
+ }
+
+ if(currentEmotion==="😢"){
+  ctx.translate(0,10);
+ }
+
+ if(currentEmotion==="😡"){
+  ctx.translate(Math.random()*5,0);
+ }
+
+ if(currentEmotion==="😴"){
+  ctx.scale(0.9,0.9);
+ }
+
+ ctx.drawImage(video,0,0,240,240);
+ ctx.restore();
 }
 
-async function login() {
-  const input = document.getElementById("password").value;
-  const hash = await sha256(input);
+// 🎞 렌더링
+faceMesh.onResults(r=>{
+ const canvas=document.getElementById("canvas");
+ const ctx=canvas.getContext("2d");
 
-  if(hash === PASSWORD_HASH) {
-    localStorage.setItem("login", "ok");
-    showApp();
-  } else {
-    document.getElementById("loginMsg").innerText = "비밀번호가 틀렸습니다.";
+ ctx.clearRect(0,0,240,240);
+
+ if(r.multiFaceLandmarks.length){
+  distort(ctx, video, r.multiFaceLandmarks[0]);
+ } else {
+  ctx.drawImage(video,0,0,240,240);
+ }
+});
+
+function loop(){
+ faceMesh.send({image:video});
+ requestAnimationFrame(loop);
+}
+video.onloadeddata=loop;
+
+// 🎯 감정 선택
+function setEmotion(e){ currentEmotion=e; }
+
+// 🎨 배경 제거
+function removeBG(ctx){
+ const img=ctx.getImageData(0,0,240,240);
+ const d=img.data;
+
+ for(let i=0;i<d.length;i+=4){
+  if(d[i]>240 && d[i+1]>240 && d[i+2]>240){
+   d[i+3]=0;
   }
+ }
+
+ ctx.putImageData(img,0,0);
 }
 
-function logout() {
-  localStorage.removeItem("login");
-  location.reload();
+// 📦 PNG 24개 — 감정별로 순서대로 캡처
+const EMO = ["😊","😢","😡","😴","😍","😮","😆","😐",
+"🥰","😭","😤","😪","😎","😳","😇","😜",
+"🤔","😬","😱","😋","🤩","😒","😔","😝"];
+
+function exportPNGSet(){
+ const canvas=document.getElementById("canvas");
+ const ctx=canvas.getContext("2d");
+
+ EMO.forEach((e,i)=>{
+  // currentEmotion을 setTimeout 안에서 설정해야 클로저 버그 없음
+  setTimeout(()=>{
+   currentEmotion=e;
+   // FaceMesh가 새 감정으로 렌더링할 시간을 준 뒤 캡처
+   setTimeout(()=>{
+    removeBG(ctx);
+    const a=document.createElement("a");
+    a.href=canvas.toDataURL("image/png");
+    a.download=`emoji_${i+1}.png`;
+    a.click();
+   }, 100);
+  }, i*300);
+ });
 }
 
-function showApp() {
-  document.getElementById("loginPage").style.display = "none";
-  document.getElementById("appPage").style.display = "block";
+// 🎞 GIF
+function exportGIF(){
+
+ const canvas=document.getElementById("canvas");
+
+ const gif=new GIF({workers:2,quality:5});
+
+ let f=0;
+
+ const cap=setInterval(()=>{
+  gif.addFrame(canvas,{copy:true,delay:80});
+  f++;
+
+  if(f>20){
+   clearInterval(cap);
+
+   gif.on('finished',b=>{
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(b);
+    a.download="emotion.gif";
+    a.click();
+   });
+
+   gif.render();
+  }
+ },80);
 }
 
-window.onload = () => {
-  if(localStorage.getItem("login") === "ok") showApp();
-};
+// 🖼 썸네일
+function generateThumbnail(){
 
-// 📷 이미지 업로드
-let uploadedImage = "";
-function uploadImage(e){
-  const reader = new FileReader();
-  reader.onload = ev => uploadedImage = ev.target.result;
-  reader.readAsDataURL(e.target.files[0]);
+ const canvas=document.getElementById("canvas");
+ const ctx=canvas.getContext("2d");
+
+ ctx.clearRect(0,0,240,240);
+ ctx.drawImage(video,20,20,200,200);
+
+ removeBG(ctx);
+
+ const a=document.createElement("a");
+ a.href=canvas.toDataURL("image/png");
+ a.download="thumbnail.png";
+ a.click();
 }
 
-// 😊 감정 리스트
-const emotions = [
-["안녕!","😊"],["헤헷!","😊"],["힝ㅠㅠ","😢"],
-["졸려요","😴"],["우와!","😊"],["멍~","😐"],
-["냠냠","😊"],["쳇!","😡"],["크앙!","😡"],
-["좋아요!","😊"],["반짝!","😊"],["응?","😐"]
-];
-
-// 💾 데이터 저장
-let emotionData = JSON.parse(localStorage.getItem("emotions")) || [];
-
-function saveEmotion(e){
-  const name = document.getElementById("name").value || "익명";
-
-  emotionData.push({
-    name:name,
-    emotion:e,
-    date:new Date().toISOString().split("T")[0]
-  });
-
-  localStorage.setItem("emotions", JSON.stringify(emotionData));
-  alert("저장되었습니다 😊");
-}
-
-// 🎨 스티커 생성
-function generateStickers(){
-  if(!uploadedImage){alert("사진 업로드!");return;}
-
-  const grid = document.getElementById("grid");
-  grid.innerHTML="";
-
-  emotions.forEach(e=>{
-    const div=document.createElement("div");
-    div.className="sticker";
-    div.innerHTML=`<img src="${uploadedImage}" width="80"><br>${e[0]}`;
-    div.onclick=()=>saveEmotion(e[1]);
-    grid.appendChild(div);
-  });
-}
-
-// 📊 그래프
-function renderChart(){
-  const counts={"😊":0,"😢":0,"😡":0,"😴":0};
-
-  emotionData.forEach(e=>{
-    if(counts[e.emotion]!==undefined) counts[e.emotion]++;
-  });
-
-  new Chart(document.getElementById("chart"),{
-    type:"bar",
-    data:{
-      labels:["행복","슬픔","화남","피곤"],
-      datasets:[{data:Object.values(counts)}]
-    }
-  });
-}
-
-// 📄 리포트
-function generateReport(){
-  const counts={"😊":0,"😢":0,"😡":0,"😴":0};
-  emotionData.forEach(e=>counts[e.emotion]++);
-
-  const max=Object.keys(counts).reduce((a,b)=>counts[a]>counts[b]?a:b);
-
-  let comment="";
-  if(max==="😊") comment="전반적으로 안정적인 상태입니다.";
-  if(max==="😢") comment="정서적 지원이 필요합니다.";
-  if(max==="😡") comment="감정 조절 지도가 필요합니다.";
-  if(max==="😴") comment="휴식이 필요합니다.";
-
-  document.getElementById("report").innerHTML=`
-    <h3>📄 감정 리포트</h3>
-    😊 ${counts["😊"]}명<br>
-    😢 ${counts["😢"]}명<br>
-    😡 ${counts["😡"]}명<br>
-    😴 ${counts["😴"]}명<br><br>
-    👉 ${comment}
-  `;
-}
 </script>
 
 </body>
