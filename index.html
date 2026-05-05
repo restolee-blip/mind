@@ -4,17 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>감정 이모티콘 생성기</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
 <style>
-body {text-align:center;font-family:sans-serif;background:#fff7fa;margin:0;padding:10px;}
-h2 {margin:10px 0;}
-#status {color:#888;font-size:13px;margin:4px 0 8px;}
-button {margin:3px;padding:8px 10px;border-radius:15px;border:none;background:#ffd1dc;font-size:18px;cursor:pointer;}
-button.active {outline:3px solid #ff69b4;background:#ffb3c6;}
-#emoGrid {display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:380px;margin:8px auto;}
-#actionBtns button {font-size:14px;padding:10px 16px;}
-canvas {border-radius:20px;display:block;margin:8px auto 0;}
-video {display:none;}
+body{text-align:center;font-family:sans-serif;background:#fff7fa;margin:0;padding:10px;}
+h2{margin:10px 0;}
+#status{font-size:13px;color:#666;margin:4px 0 8px;}
+button{margin:3px;padding:8px 10px;border-radius:15px;border:none;background:#ffd1dc;font-size:18px;cursor:pointer;}
+button.active{outline:3px solid #ff69b4;background:#ffb3c6;}
+#emoGrid{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:380px;margin:8px auto;}
+#actionBtns button{font-size:14px;padding:10px 16px;}
+#bgRow{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;margin:6px 0;}
+#bgRow button{width:36px;height:36px;border-radius:50%;padding:0;font-size:10px;}
+canvas{border-radius:20px;display:block;margin:8px auto 0;}
+video{display:none;}
 </style>
 </head>
 <body>
@@ -22,12 +25,22 @@ video {display:none;}
 <h2>😊 감정 이모티콘 생성기</h2>
 <p id="status">카메라 연결 중...</p>
 
-<!-- video는 숨기고 canvas만 표시 -->
 <video id="video" autoplay playsinline muted></video>
 <canvas id="canvas" width="320" height="320"></canvas>
 
-<div id="emoGrid"></div>
+<p style="font-size:12px;color:#888;margin:8px 0 2px;">배경 선택</p>
+<div id="bgRow">
+  <button data-bg="none"    class="active" style="width:46px;">원본</button>
+  <button data-bg="#ffffff" style="background:#fff;border:1px solid #ddd;"></button>
+  <button data-bg="#000000" style="background:#222;"></button>
+  <button data-bg="#87CEEB" style="background:#87CEEB;"></button>
+  <button data-bg="#90EE90" style="background:#90EE90;"></button>
+  <button data-bg="#FFB6C1" style="background:#FFB6C1;"></button>
+  <button data-bg="#FFF9C4" style="background:#FFF9C4;"></button>
+  <button data-bg="#E8D5FF" style="background:#E8D5FF;"></button>
+</div>
 
+<div id="emoGrid"></div>
 <br>
 <div id="actionBtns">
   <button onclick="takePhoto()">📸 사진 찍기</button>
@@ -36,43 +49,53 @@ video {display:none;}
 </div>
 
 <script>
-const EMO = [
-  "😊","😢","😡","😴","😍","😮","😆","😐",
-  "🥰","😭","😤","😪","😎","😳","😇","😜",
-  "🤔","😬","😱","😋","🤩","😒","😔","😝"
-];
+const EMO = ["😊","😢","😡","😴","😍","😮","😆","😐",
+             "🥰","😭","😤","😪","😎","😳","😇","😜",
+             "🤔","😬","😱","😋","🤩","😒","😔","😝"];
 
 const EFFECTS = {
-  "😊": {filter:"brightness(1.1) saturate(1.6)", sx:1.08, sy:1.06},
-  "😢": {filter:"brightness(0.75) saturate(0.4) hue-rotate(200deg)", dy:12},
-  "😡": {filter:"brightness(1.1) saturate(2.5) hue-rotate(340deg)", shake:true},
-  "😴": {filter:"brightness(0.65) saturate(0.3) blur(1.5px)", sx:0.93, sy:0.9},
-  "😍": {filter:"brightness(1.2) saturate(2.2) hue-rotate(-20deg)", sx:1.12, sy:1.12},
-  "😮": {filter:"brightness(1.05) contrast(1.3)", sy:1.15},
-  "😆": {filter:"brightness(1.2) saturate(1.8)", sx:1.15},
-  "😐": {filter:"saturate(0.5) brightness(0.92)"},
-  "🥰": {filter:"brightness(1.15) saturate(2.4) hue-rotate(-15deg)", sx:1.1, sy:1.1},
-  "😭": {filter:"brightness(0.65) saturate(0.3) hue-rotate(215deg)", dy:18},
-  "😤": {filter:"brightness(1.05) saturate(2.2) contrast(1.3)"},
-  "😪": {filter:"brightness(0.7) saturate(0.4) blur(0.8px)", sy:0.88},
-  "😎": {filter:"brightness(0.9) contrast(1.5) saturate(1.1)"},
-  "😳": {filter:"brightness(1.25) saturate(1.9) hue-rotate(-30deg)", sx:1.12, sy:1.12},
-  "😇": {filter:"brightness(1.35) saturate(0.7)"},
-  "😜": {filter:"brightness(1.1) saturate(1.6)", rotate:6},
-  "🤔": {filter:"brightness(0.95) saturate(0.85)", rotate:-4},
-  "😬": {filter:"brightness(1.05) contrast(1.4) saturate(0.75)", sx:1.22, sy:0.88},
-  "😱": {filter:"brightness(1.1) contrast(1.6) saturate(0.45)", sx:1.2, sy:1.3},
-  "😋": {filter:"brightness(1.12) saturate(1.7)", sx:1.06, sy:1.06},
-  "🤩": {filter:"brightness(1.35) saturate(3.0)", sx:1.2, sy:1.2},
-  "😒": {filter:"brightness(0.88) saturate(0.55)", dy:6},
-  "😔": {filter:"brightness(0.72) saturate(0.4)", dy:12},
-  "😝": {filter:"brightness(1.15) saturate(1.9) hue-rotate(15deg)", sx:1.1, sy:0.93},
+  "😊":{filter:"brightness(1.1) saturate(1.6)",sx:1.08,sy:1.06},
+  "😢":{filter:"brightness(0.75) saturate(0.4) hue-rotate(200deg)",dy:12},
+  "😡":{filter:"brightness(1.1) saturate(2.5) hue-rotate(340deg)",shake:true},
+  "😴":{filter:"brightness(0.65) saturate(0.3) blur(1.5px)",sx:0.93,sy:0.9},
+  "😍":{filter:"brightness(1.2) saturate(2.2) hue-rotate(-20deg)",sx:1.12,sy:1.12},
+  "😮":{filter:"brightness(1.05) contrast(1.3)",sy:1.15},
+  "😆":{filter:"brightness(1.2) saturate(1.8)",sx:1.15},
+  "😐":{filter:"saturate(0.5) brightness(0.92)"},
+  "🥰":{filter:"brightness(1.15) saturate(2.4) hue-rotate(-15deg)",sx:1.1,sy:1.1},
+  "😭":{filter:"brightness(0.65) saturate(0.3) hue-rotate(215deg)",dy:18},
+  "😤":{filter:"brightness(1.05) saturate(2.2) contrast(1.3)"},
+  "😪":{filter:"brightness(0.7) saturate(0.4) blur(0.8px)",sy:0.88},
+  "😎":{filter:"brightness(0.9) contrast(1.5) saturate(1.1)"},
+  "😳":{filter:"brightness(1.25) saturate(1.9) hue-rotate(-30deg)",sx:1.12,sy:1.12},
+  "😇":{filter:"brightness(1.35) saturate(0.7)"},
+  "😜":{filter:"brightness(1.1) saturate(1.6)",rotate:6},
+  "🤔":{filter:"brightness(0.95) saturate(0.85)",rotate:-4},
+  "😬":{filter:"brightness(1.05) contrast(1.4) saturate(0.75)",sx:1.22,sy:0.88},
+  "😱":{filter:"brightness(1.1) contrast(1.6) saturate(0.45)",sx:1.2,sy:1.3},
+  "😋":{filter:"brightness(1.12) saturate(1.7)",sx:1.06,sy:1.06},
+  "🤩":{filter:"brightness(1.35) saturate(3.0)",sx:1.2,sy:1.2},
+  "😒":{filter:"brightness(0.88) saturate(0.55)",dy:6},
+  "😔":{filter:"brightness(0.72) saturate(0.4)",dy:12},
+  "😝":{filter:"brightness(1.15) saturate(1.9) hue-rotate(15deg)",sx:1.1,sy:0.93},
 };
 
 let currentEmotion = "😊";
+let currentBg = "none";
 let cameraReady = false;
+let segReady = false;
+let lastSegTime = 0;
 
-// ── 감정 버튼 24개 동적 생성 ──────────────────────
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+// 세그멘테이션 합성용 오프스크린 캔버스
+const offscreen = document.createElement("canvas");
+offscreen.width = W; offscreen.height = H;
+const offCtx = offscreen.getContext("2d");
+
+// ── 감정 버튼 24개 ────────────────────────────────
 const grid = document.getElementById("emoGrid");
 EMO.forEach(e => {
   const btn = document.createElement("button");
@@ -89,58 +112,119 @@ function setEmotion(e) {
     b.classList.toggle("active", b.dataset.emo === e));
 }
 
-// ── 카메라 연결 ───────────────────────────────────
-const video = document.getElementById("video");
+// ── 배경 버튼 ─────────────────────────────────────
+document.querySelectorAll("#bgRow button").forEach(btn => {
+  btn.onclick = () => {
+    currentBg = btn.dataset.bg;
+    document.querySelectorAll("#bgRow button").forEach(b =>
+      b.classList.toggle("active", b.dataset.bg === currentBg));
+  };
+});
 
-navigator.mediaDevices.getUserMedia({video:{width:320,height:320,facingMode:"user"}, audio:false})
+// ── 상태 표시 ─────────────────────────────────────
+function updateStatus() {
+  const cam = cameraReady ? "카메라 ✓" : "카메라 연결 중...";
+  const seg = !segModule       ? "배경 제거 불가 (CDN 오류)" :
+              segReady         ? "배경 제거 ✓" :
+                                 "배경 제거 모델 로딩 중...";
+  document.getElementById("status").textContent = cam + " | " + seg;
+}
+
+// ── 카메라 ────────────────────────────────────────
+const video = document.getElementById("video");
+navigator.mediaDevices.getUserMedia({video:{width:320,height:320,facingMode:"user"},audio:false})
   .then(stream => {
     video.srcObject = stream;
     video.onloadedmetadata = () => {
       video.play();
       cameraReady = true;
-      document.getElementById("status").textContent = "카메라 연결됨 ✓";
+      updateStatus();
       requestAnimationFrame(renderLoop);
     };
   })
   .catch(err => {
-    document.getElementById("status").textContent = "카메라 오류: " + err.message;
+    document.getElementById("status").textContent = "❌ 카메라 오류: " + err.message;
   });
 
-// ── 캔버스 렌더링 ─────────────────────────────────
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+// ── Selfie Segmentation (CDN 실패 시 null로 fallback) ──
+let segModule = null;
+try {
+  segModule = new SelfieSegmentation({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`
+  });
+  segModule.setOptions({modelSelection: 1, selfieMode: false});
+  segModule.onResults(onSegResults);
+} catch(e) {
+  segModule = null;
+  console.warn("SelfieSegmentation 초기화 실패:", e);
+}
+updateStatus();
 
-// 감정 효과를 적용해 targetCtx에 그리기
-function drawWithEffect(targetCtx, w, h) {
+// ── 감정 효과 그리기 (공통 헬퍼) ──────────────────
+function drawWithEffect(targetCtx) {
   const eff = EFFECTS[currentEmotion] || {};
-  const cx = w / 2, cy = h / 2;
-
+  const cx = W / 2, cy = H / 2;
   targetCtx.save();
   targetCtx.filter = eff.filter || "none";
   targetCtx.translate(cx, cy);
   if (eff.rotate) targetCtx.rotate(eff.rotate * Math.PI / 180);
   targetCtx.scale(eff.sx || 1, eff.sy || 1);
   const dx = eff.shake ? (Math.random() - 0.5) * 8 : 0;
-  targetCtx.translate(-cx + dx, -cy + (eff.dy || 0)); // -cy + dy (부호 수정)
-  targetCtx.drawImage(video, 0, 0, w, h);
+  targetCtx.translate(-cx + dx, -cy + (eff.dy || 0));
+  targetCtx.drawImage(video, 0, 0, W, H);
   targetCtx.restore();
   targetCtx.filter = "none";
 }
 
-// video → canvas 직접 렌더 루프 (FaceMesh 불필요)
+// ── 세그멘테이션 결과 처리 ────────────────────────
+function onSegResults(results) {
+  if (!segReady) { segReady = true; updateStatus(); }
+
+  ctx.clearRect(0, 0, W, H);
+
+  if (currentBg !== "none") {
+    // 1) 오프스크린: 감정 효과 적용 후 사람 픽셀만 남김
+    offCtx.clearRect(0, 0, W, H);
+    drawWithEffect(offCtx);
+    offCtx.globalCompositeOperation = "destination-in";
+    offCtx.drawImage(results.segmentationMask, 0, 0, W, H);
+    offCtx.globalCompositeOperation = "source-over";
+
+    // 2) 메인 캔버스: 배경색 → 인물 합성
+    ctx.fillStyle = currentBg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(offscreen, 0, 0);
+  } else {
+    // 배경 제거 없이 일반 렌더
+    drawWithEffect(ctx);
+  }
+}
+
+// ── 렌더링 루프 ───────────────────────────────────
 function renderLoop() {
-  if (video.readyState >= 2) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawWithEffect(ctx, canvas.width, canvas.height);
+  if (cameraReady && video.readyState >= 2) {
+    const now = performance.now();
+
+    // 세그멘테이션에 30fps 주기로 프레임 전송
+    if (segModule && now - lastSegTime > 33) {
+      lastSegTime = now;
+      segModule.send({image: video});
+    }
+
+    // 세그멘테이션 준비 전: 직접 렌더 (fallback)
+    if (!segReady) {
+      ctx.clearRect(0, 0, W, H);
+      drawWithEffect(ctx);
+    }
+    // segReady 이후: onSegResults에서 렌더
   }
   requestAnimationFrame(renderLoop);
 }
 
 // ── 다운로드 헬퍼 ─────────────────────────────────
-function download(dataURL, filename) {
+function download(url, name) {
   const a = document.createElement("a");
-  a.href = dataURL;
-  a.download = filename;
+  a.href = url; a.download = name;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -148,11 +232,7 @@ function download(dataURL, filename) {
 
 // ── 📸 사진 찍기 ──────────────────────────────────
 function takePhoto() {
-  if (!cameraReady || video.readyState < 2) {
-    alert("카메라가 준비되지 않았습니다.");
-    return;
-  }
-  // canvas는 매 프레임 갱신 중이므로 현재 상태를 바로 저장
+  if (!cameraReady || video.readyState < 2) { alert("카메라 준비 중입니다."); return; }
   download(canvas.toDataURL("image/png"), `photo_${currentEmotion}.png`);
 }
 
@@ -175,8 +255,8 @@ function exportPNGSet() {
 // ── 🎞 GIF ────────────────────────────────────────
 function exportGIF() {
   if (!cameraReady) { alert("카메라가 준비되지 않았습니다."); return; }
-  if (typeof GIF === "undefined") { alert("GIF 라이브러리를 불러오지 못했습니다."); return; }
-  const gif = new GIF({workers:2, quality:5, width:canvas.width, height:canvas.height});
+  if (typeof GIF === "undefined") { alert("GIF 라이브러리 로딩 실패"); return; }
+  const gif = new GIF({workers:2, quality:5, width:W, height:H});
   let f = 0;
   const cap = setInterval(() => {
     gif.addFrame(canvas, {copy:true, delay:80});
