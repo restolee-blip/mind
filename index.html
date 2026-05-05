@@ -151,14 +151,28 @@ video.addEventListener("loadeddata", () => {
   loop();
 });
 
-// 📸 사진 찍기 — 현재 캔버스 상태를 바로 저장
+// 📸 사진 찍기 — video에서 직접 그려서 FaceMesh 타이밍 문제 방지
 function takePhoto() {
+  if (video.readyState < 2) { alert("카메라가 준비되지 않았습니다."); return; }
+
   const photoCanvas = document.getElementById("photoCanvas");
   const pCtx = photoCanvas.getContext("2d");
-  pCtx.clearRect(0, 0, 240, 240);
-  pCtx.drawImage(canvas, 0, 0);
-  photoCanvas.style.display = "block";
+  const eff = EFFECTS[currentEmotion] || {};
+  const cx = 120, cy = 120;
 
+  pCtx.clearRect(0, 0, 240, 240);
+  pCtx.save();
+  pCtx.filter = eff.filter || "none";
+  pCtx.translate(cx, cy);
+  if (eff.rotate) pCtx.rotate(eff.rotate * Math.PI / 180);
+  pCtx.scale(eff.sx || 1, eff.sy || 1);
+  const dx = eff.shake ? (Math.random() - 0.5) * 10 : 0;
+  pCtx.translate(-cx + dx, -(cy + (eff.dy || 0)));
+  pCtx.drawImage(video, 0, 0, 240, 240);
+  pCtx.restore();
+  pCtx.filter = "none";
+
+  photoCanvas.style.display = "block";
   const a = document.createElement("a");
   a.href = photoCanvas.toDataURL("image/png");
   a.download = `photo_${currentEmotion}.png`;
