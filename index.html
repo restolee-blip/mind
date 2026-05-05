@@ -10,8 +10,11 @@
 
 <style>
 body {text-align:center;font-family:sans-serif;background:#fff7fa;}
-button {margin:5px;padding:10px;border-radius:15px;border:none;background:#ffd1dc;}
+button {margin:3px;padding:8px 10px;border-radius:15px;border:none;background:#ffd1dc;font-size:18px;cursor:pointer;}
+button.active {outline:3px solid #ff69b4;}
+#emoGrid {display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:360px;margin:10px auto;}
 canvas,video {border-radius:20px;margin-top:10px;}
+#actionBtns button {font-size:14px;padding:10px 14px;}
 </style>
 </head>
 
@@ -24,169 +27,200 @@ canvas,video {border-radius:20px;margin-top:10px;}
 
 <br>
 
-<button onclick="setEmotion('😊')">😊</button>
-<button onclick="setEmotion('😢')">😢</button>
-<button onclick="setEmotion('😡')">😡</button>
-<button onclick="setEmotion('😴')">😴</button>
+<!-- 감정 버튼 24개 — JS로 생성 -->
+<div id="emoGrid"></div>
 
-<br><br>
+<br>
+<div id="actionBtns">
+  <button onclick="takePhoto()">📸 사진 찍기</button>
+  <button onclick="exportPNGSet()">📦 PNG 24개</button>
+  <button onclick="exportGIF()">🎞 GIF</button>
+  <button onclick="generateThumbnail()">🖼 썸네일</button>
+</div>
 
-<button onclick="exportPNGSet()">📦 PNG 24개</button>
-<button onclick="exportGIF()">🎞 GIF</button>
-<button onclick="generateThumbnail()">🖼 썸네일</button>
+<br>
+<canvas id="photoCanvas" width="240" height="240" style="display:none;border-radius:20px;margin-top:10px;"></canvas>
+<a id="photoLink" style="display:none;"></a>
 
 <script>
 
-// 🎯 감정
+const EMO = ["😊","😢","😡","😴","😍","😮","😆","😐",
+             "🥰","😭","😤","😪","😎","😳","😇","😜",
+             "🤔","😬","😱","😋","🤩","😒","😔","😝"];
+
+// 감정별 시각 효과 정의
+const EFFECTS = {
+  "😊": {filter:"brightness(1.1) saturate(1.6)", sx:1.08, sy:1.06},
+  "😢": {filter:"brightness(0.75) saturate(0.4) hue-rotate(200deg)", dy:10},
+  "😡": {filter:"brightness(1.1) saturate(2.5) hue-rotate(340deg)", shake:true},
+  "😴": {filter:"brightness(0.65) saturate(0.3) blur(1px)", sx:0.93, sy:0.9},
+  "😍": {filter:"brightness(1.2) saturate(2.2) hue-rotate(-20deg)", sx:1.12, sy:1.12},
+  "😮": {filter:"brightness(1.05) contrast(1.3)", sx:1.0, sy:1.2},
+  "😆": {filter:"brightness(1.2) saturate(1.8)", sx:1.18, sy:1.0},
+  "😐": {filter:"saturate(0.5) brightness(0.92)"},
+  "🥰": {filter:"brightness(1.15) saturate(2.4) hue-rotate(-15deg)", sx:1.1, sy:1.1},
+  "😭": {filter:"brightness(0.65) saturate(0.3) hue-rotate(215deg)", dy:18},
+  "😤": {filter:"brightness(1.05) saturate(2.2) contrast(1.3) hue-rotate(5deg)"},
+  "😪": {filter:"brightness(0.7) saturate(0.4) blur(0.8px)", sy:0.88},
+  "😎": {filter:"brightness(0.9) contrast(1.5) saturate(1.1)"},
+  "😳": {filter:"brightness(1.25) saturate(1.9) hue-rotate(-30deg)", sx:1.12, sy:1.12},
+  "😇": {filter:"brightness(1.35) saturate(0.7)"},
+  "😜": {filter:"brightness(1.1) saturate(1.6)", rotate:6},
+  "🤔": {filter:"brightness(0.95) saturate(0.85)", rotate:-4},
+  "😬": {filter:"brightness(1.05) contrast(1.4) saturate(0.75)", sx:1.22, sy:0.88},
+  "😱": {filter:"brightness(1.1) contrast(1.6) saturate(0.45)", sx:1.25, sy:1.35},
+  "😋": {filter:"brightness(1.12) saturate(1.7)", sx:1.06, sy:1.06},
+  "🤩": {filter:"brightness(1.35) saturate(3.0)", sx:1.2, sy:1.2},
+  "😒": {filter:"brightness(0.88) saturate(0.55)", dy:6},
+  "😔": {filter:"brightness(0.72) saturate(0.4)", dy:12},
+  "😝": {filter:"brightness(1.15) saturate(1.9) hue-rotate(15deg)", sx:1.1, sy:0.93},
+};
+
 let currentEmotion = "😊";
+
+// 감정 버튼 동적 생성
+const grid = document.getElementById("emoGrid");
+EMO.forEach(e => {
+  const btn = document.createElement("button");
+  btn.textContent = e;
+  btn.dataset.emo = e;
+  if (e === "😊") btn.classList.add("active");
+  btn.onclick = () => setEmotion(e);
+  grid.appendChild(btn);
+});
+
+function setEmotion(e) {
+  currentEmotion = e;
+  document.querySelectorAll("#emoGrid button").forEach(b => {
+    b.classList.toggle("active", b.dataset.emo === e);
+  });
+}
 
 // 🎥 카메라
 const video = document.getElementById("video");
 navigator.mediaDevices.getUserMedia({video:true})
-.then(stream=>video.srcObject=stream);
+  .then(stream => { video.srcObject = stream; })
+  .catch(() => alert("카메라 권한이 필요합니다."));
 
 // 🧠 FaceMesh
 const faceMesh = new FaceMesh({
- locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
 });
-faceMesh.setOptions({maxNumFaces:1,refineLandmarks:true});
+faceMesh.setOptions({maxNumFaces:1, refineLandmarks:true});
 
-// 🎨 얼굴 변형
-function distort(ctx, video, lm){
+// 🎨 감정 효과 적용 후 그리기
+function distort(ctx, lm) {
+  const eff = EFFECTS[currentEmotion] || {};
+  const cx = 120, cy = 120;
 
- const m = lm[13];
- const x = m.x * 240;
- const y = m.y * 240;
-
- ctx.save();
-
- if(currentEmotion==="😊"){
-  ctx.translate(x,y);
-  ctx.scale(1.3,1.1);
-  ctx.translate(-x,-y);
- }
-
- if(currentEmotion==="😢"){
-  ctx.translate(0,10);
- }
-
- if(currentEmotion==="😡"){
-  ctx.translate(Math.random()*5,0);
- }
-
- if(currentEmotion==="😴"){
-  ctx.scale(0.9,0.9);
- }
-
- ctx.drawImage(video,0,0,240,240);
- ctx.restore();
+  ctx.save();
+  ctx.filter = eff.filter || "none";
+  ctx.translate(cx, cy);
+  if (eff.rotate) ctx.rotate(eff.rotate * Math.PI / 180);
+  ctx.scale(eff.sx || 1, eff.sy || 1);
+  const dx = eff.shake ? (Math.random() - 0.5) * 10 : 0;
+  const dy = eff.dy || 0;
+  ctx.translate(-cx + dx, -cy + dy);
+  ctx.drawImage(video, 0, 0, 240, 240);
+  ctx.restore();
+  ctx.filter = "none";
 }
 
-// 🎞 렌더링
-faceMesh.onResults(r=>{
- const canvas=document.getElementById("canvas");
- const ctx=canvas.getContext("2d");
+// 렌더링 루프
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
- ctx.clearRect(0,0,240,240);
-
- if(r.multiFaceLandmarks.length){
-  distort(ctx, video, r.multiFaceLandmarks[0]);
- } else {
-  ctx.drawImage(video,0,0,240,240);
- }
-});
-
-function loop(){
- faceMesh.send({image:video});
- requestAnimationFrame(loop);
-}
-video.onloadeddata=loop;
-
-// 🎯 감정 선택
-function setEmotion(e){ currentEmotion=e; }
-
-// 🎨 배경 제거
-function removeBG(ctx){
- const img=ctx.getImageData(0,0,240,240);
- const d=img.data;
-
- for(let i=0;i<d.length;i+=4){
-  if(d[i]>240 && d[i+1]>240 && d[i+2]>240){
-   d[i+3]=0;
+faceMesh.onResults(r => {
+  ctx.clearRect(0, 0, 240, 240);
+  if (r.multiFaceLandmarks && r.multiFaceLandmarks.length) {
+    distort(ctx, r.multiFaceLandmarks[0]);
+  } else {
+    ctx.drawImage(video, 0, 0, 240, 240);
   }
- }
+});
 
- ctx.putImageData(img,0,0);
+let loopRunning = false;
+function loop() {
+  if (!loopRunning) return;
+  faceMesh.send({image: video});
+  requestAnimationFrame(loop);
 }
 
-// 📦 PNG 24개 — 감정별로 순서대로 캡처
-const EMO = ["😊","😢","😡","😴","😍","😮","😆","😐",
-"🥰","😭","😤","😪","😎","😳","😇","😜",
-"🤔","😬","😱","😋","🤩","😒","😔","😝"];
+video.addEventListener("loadeddata", () => {
+  loopRunning = true;
+  loop();
+});
 
-function exportPNGSet(){
- const canvas=document.getElementById("canvas");
- const ctx=canvas.getContext("2d");
+// 📸 사진 찍기 — 현재 캔버스 상태를 바로 저장
+function takePhoto() {
+  const photoCanvas = document.getElementById("photoCanvas");
+  const pCtx = photoCanvas.getContext("2d");
+  pCtx.clearRect(0, 0, 240, 240);
+  pCtx.drawImage(canvas, 0, 0);
+  photoCanvas.style.display = "block";
 
- EMO.forEach((e,i)=>{
-  // currentEmotion을 setTimeout 안에서 설정해야 클로저 버그 없음
-  setTimeout(()=>{
-   currentEmotion=e;
-   // FaceMesh가 새 감정으로 렌더링할 시간을 준 뒤 캡처
-   setTimeout(()=>{
-    removeBG(ctx);
-    const a=document.createElement("a");
-    a.href=canvas.toDataURL("image/png");
-    a.download=`emoji_${i+1}.png`;
-    a.click();
-   }, 100);
-  }, i*300);
- });
+  const a = document.createElement("a");
+  a.href = photoCanvas.toDataURL("image/png");
+  a.download = `photo_${currentEmotion}.png`;
+  a.click();
+}
+
+// 🎨 배경 제거 (흰 픽셀 투명화)
+function removeBG(c) {
+  const pCtx = c.getContext("2d");
+  const img = pCtx.getImageData(0, 0, 240, 240);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i] > 240 && d[i+1] > 240 && d[i+2] > 240) d[i+3] = 0;
+  }
+  pCtx.putImageData(img, 0, 0);
+}
+
+// 📦 PNG 24개 — 감정별 순차 캡처
+function exportPNGSet() {
+  EMO.forEach((e, i) => {
+    setTimeout(() => {
+      setEmotion(e);
+      setTimeout(() => {
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = `emoji_${i+1}_${e}.png`;
+        a.click();
+      }, 150);
+    }, i * 400);
+  });
 }
 
 // 🎞 GIF
-function exportGIF(){
-
- const canvas=document.getElementById("canvas");
-
- const gif=new GIF({workers:2,quality:5});
-
- let f=0;
-
- const cap=setInterval(()=>{
-  gif.addFrame(canvas,{copy:true,delay:80});
-  f++;
-
-  if(f>20){
-   clearInterval(cap);
-
-   gif.on('finished',b=>{
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(b);
-    a.download="emotion.gif";
-    a.click();
-   });
-
-   gif.render();
-  }
- },80);
+function exportGIF() {
+  const gif = new GIF({workers:2, quality:5});
+  let f = 0;
+  const cap = setInterval(() => {
+    gif.addFrame(canvas, {copy:true, delay:80});
+    if (++f > 20) {
+      clearInterval(cap);
+      gif.on('finished', b => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(b);
+        a.download = "emotion.gif";
+        a.click();
+      });
+      gif.render();
+    }
+  }, 80);
 }
 
 // 🖼 썸네일
-function generateThumbnail(){
-
- const canvas=document.getElementById("canvas");
- const ctx=canvas.getContext("2d");
-
- ctx.clearRect(0,0,240,240);
- ctx.drawImage(video,20,20,200,200);
-
- removeBG(ctx);
-
- const a=document.createElement("a");
- a.href=canvas.toDataURL("image/png");
- a.download="thumbnail.png";
- a.click();
+function generateThumbnail() {
+  const tmp = document.createElement("canvas");
+  tmp.width = 240; tmp.height = 240;
+  const tCtx = tmp.getContext("2d");
+  tCtx.drawImage(video, 20, 20, 200, 200);
+  removeBG(tmp);
+  const a = document.createElement("a");
+  a.href = tmp.toDataURL("image/png");
+  a.download = "thumbnail.png";
+  a.click();
 }
 
 </script>
